@@ -5,26 +5,47 @@ import {
 	IDebuggerTrackerEvent,
 	IDebuggerSubscription,
 	DebugSessionStatus,
+    OtherDebugEvents,
 	DebugTracker
 } from 'debug-tracker-vscode';
+
+import * as jtrace from './traceProvider/jtrace';
+import * as trace from './traceProvider/trace';
+
+// assign the default trace that does nothing
+let currentTrace: trace.Trace = new trace.DefaultTrace();
+let periodicUpdates: boolean = false;
+let timeoutId: NodeJS.Timeout;
 
 const TRACKER_EXT_ID = 'mcu-debug.debug-tracker-vscode';
 let trackerApi: IDebugTracker;
 let trackerApiClientInfo: IDebuggerSubscription;
 
+function onActiveFileChange(document: vscode.TextDocument | undefined) {
+    // update the trace counts to the new file
+    currentTrace.showTraceCounts();
+}
+
+function updateAndShowCounts() {
+    // update the trace counts
+    currentTrace.showTraceCounts();
+}
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	console.log('Congratulations, your extension "debug-tracker-client" is now active!');
+	console.log('Congratulations, your extension "trace-debug" is now active!');
 
 	// package.json has been setup so any start of a debug session triggers our activation but
 	// you can also start the extension manually
 	context.subscriptions.push(
-		vscode.commands.registerCommand('debug-tracker-client.start', () => {
+		vscode.commands.registerCommand('trace-debug.start', () => {
 			// The code you place here will be executed every time your command is executed
 			// Display a message box to the user
-			vscode.window.showInformationMessage('Hello from debug-tracker-client.start!');
-		})
+			vscode.window.showInformationMessage('Hello from trace-debug.start!');
+		}),
+
+        vscode.window.onDidChangeActiveTextEditor((ev) => onActiveFileChange(ev?.document)),
 	);
 
 	// We can use either our own copy of a debug tracker or use a shared one.
@@ -32,8 +53,8 @@ export function activate(context: vscode.ExtensionContext) {
 		const arg: IDebuggerTrackerSubscribeArg = {
 			version: 1,
 			body: {
-				debuggers: '*',						// All debuggers
-				// debuggers: ['cortex-debug', 'cppdbg'], 	// Only these debugger
+                // We only support cortex-debug for now
+				debuggers: ['cortex-debug'], 	
 				handler: debugTrackerEventHandler,
 				wantCurrentStatus: true,
 				notifyAllEvents: false,
@@ -55,7 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
 		trackerApi = new DebugTracker(context);
 		doSubscribe();
 	} else {
-		DebugTracker.getTrackerExtension('debug-tracker-client').then((ret) => {
+		DebugTracker.getTrackerExtension('trace-debug').then((ret) => {
 			if (ret instanceof Error) {
 				vscode.window.showErrorMessage(ret.message);
 			} else {
@@ -74,8 +95,61 @@ export function deactivate() {
 }
 
 async function debugTrackerEventHandler(event: IDebuggerTrackerEvent) {
-	console.log('debug-tracker-client: Got event', event);
+	console.log('trace-debug: Got event', event);
 	if (event.event === DebugSessionStatus.Initializing) {
-		console.log('debug-tracker-client: NEW SESSION!!!!');
+        // clear the updates
+        if (periodicUpdates) {
+            clearInterval(timeoutId);
+            periodicUpdates = false;
+        }
+
+        // check if we have a valid session
+        if (event.session !== undefined) {
+            const config = event.session.configuration;
+            
+            // check what trace we should start
+            switch (config.servertype) {
+                case 'jlink':
+                    // change to the jtrace
+                    // todo: add support for custom speeds
+                    currentTrace = new jtrace.Jtrace(
+                        config.toolchainPath + config.toolchainPrefix + '-addr2line.exe', 
+                        config.executable, config.device, config.interface, 20000
+                    );
+                    break;
+    
+                default:
+                    // change to the default trace that does nothing
+                    currentTrace = new trace.DefaultTrace();
+                    break;
+            }
+        }
 	}
+    else if (event.event === DebugSessionStatus.Stopped) {
+        // update the trace
+        if (currentTrace.update()) {
+            if (!periodicUpdates) {
+                timeoutId = setInterval(updateAndShowCounts, 250);
+
+                periodicUpdates = true;
+            }
+
+            // something went wrong with updating the trace
+            currentTrace.showTraceCounts();
+        }
+    }
+    else if (event.event === DebugSessionStatus.Running) {
+        currentTrace.start();
+    }
+    else if (event.event === DebugSessionStatus.Terminated) {
+        // terminate the current trace
+        currentTrace.terminate();
+
+        // clear the updates again
+        if (periodicUpdates) {
+            clearInterval(timeoutId);
+            periodicUpdates = false;
+        }
+    }
 }
+
