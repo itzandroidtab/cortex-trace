@@ -1,4 +1,4 @@
-# mcu-trace README
+# Cortex Trace README
 
 This repo is to demonstrate the use of the [debug-tracker-vscode](https://github.com/mcu-debug/debug-tracker-vscode) extension. Any client interested in tracking debuggers can use `debug-tracker-vscode` extension and this extension gives you a sample. It invokes the API from the tracker extension for its own use.
 
