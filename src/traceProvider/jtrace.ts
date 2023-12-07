@@ -28,6 +28,7 @@ class MemoryMap {
 export class Jtrace extends trace.Trace {
     private readonly interfaceId: number;
     private readonly speed: number;
+    private readonly executable: string;
  
     private readonly assemblyLineInfo: Array<TraceLineInfo>;
     private readonly memoryMap: Array<MemoryMap>;
@@ -58,7 +59,7 @@ export class Jtrace extends trace.Trace {
         }
     }
 
-    constructor(addr2line: string, executable: string, device: string, interfaceId: string, speed: number) {
+    constructor(executable: string, device: string, interfaceId: string, speed: number) {
         super();
 
         // clear the initialized flag
@@ -68,6 +69,7 @@ export class Jtrace extends trace.Trace {
         // connect sequence
         this.speed = speed;
         this.interfaceId = this.interfaceStrToId(interfaceId);
+        this.executable = executable;
 
         // get the memory map and select the device
         this.memoryMap = jtraceDll.setAndGetMemoryMap(device);
@@ -83,14 +85,47 @@ export class Jtrace extends trace.Trace {
         this.counters = new BigUint64Array(this.memoryMap[0].size / 2);
 
         // read the assembly information for the current file
-        // todo: support multiple sections
-        this.assemblyLineInfo = jtraceDll.addr2line(0, "arm-none-eabi-addr2line.exe", executable);
-        // this.assemblyLineInfo = new Array<TraceLineInfo>(0);
+        // todo: support multiple sections        
+        this.assemblyLineInfo = new Array<TraceLineInfo>(this.memoryMap[0].size / 2);
+
+        // clear the array
+        for (let asm of this.assemblyLineInfo) {
+            asm = new TraceLineInfo("", 0);
+        }
     }
 
     public override update() {
         // check if we are already connected
         if (!this.isConnected) {
+            if (vscode.debug.activeDebugSession !== undefined) {
+                let address = this.memoryMap[0].address;
+
+                // do a request for all the function symbols
+                vscode.debug.activeDebugSession.customRequest('load-function-symbols').then((data) => {
+                    if (data === undefined || data.functionSymbols === undefined) {
+                        return;
+                    }
+
+                    // get all the instructions for every function
+                    for (const func of data.functionSymbols) {
+                        // make sure we have a valid debug session
+                        if (vscode.debug.activeDebugSession === undefined) {
+                            return;
+                        }
+
+                        // do a disassemble request
+                        vscode.debug.activeDebugSession.customRequest('disassemble', {function: func.name, file: func.file}).then((asm) => {
+                            // add every instruction to the assembly info
+                            for (const a of asm.instructions) {
+                                this.assemblyLineInfo[a.address / 2] = new TraceLineInfo(func.file, a.line);
+                            }
+                        }, (error) => {
+                            console.log("Cortex Trace: Could not disassemble: " + error);
+                        });
+                    }
+                });
+            }
+
             // init the and connect with the jlink
             if (!jtraceDll.init()) {
                 // something went wrong. Do not start
@@ -117,6 +152,11 @@ export class Jtrace extends trace.Trace {
             // start the trace
             jtraceDll.start();
         }
+    }
+
+    public override stop() {
+        // do nothing. The trace automaticly gets stopped when the
+        // target halts
     }
 
     public override terminate() {
