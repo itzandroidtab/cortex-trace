@@ -1,9 +1,5 @@
 # Change Log
 
-All notable changes to the "debug-tracker-client" extension will be documented in this file.
-
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
-
-## [Unreleased]
+## [V0.0.1]
 
 - Initial release
