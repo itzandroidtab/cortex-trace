@@ -1,30 +1,49 @@
 {
   "version": "0.0.1",
-  "name": "debug-tracker-client",
-  "displayName": "debug-tracker-client",
-  "description": "Example usage of a debug-tracker-vscode extension",
+  "name": "cortex-trace",
+  "displayName": "Cortex-Trace",
+  "publisher": "itzandroidtab",
+  "description": "Trace support for ARM Cortex-M using J-Trace",
+  "keywords": [
+    "cortex-m",
+    "j-trace",
+    "streaming trace",
+    "trace",
+    "embedded"
+  ],
   "engines": {
     "vscode": "^1.71.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mcu-debug/debug-tracker-client.git"
+    "url": "https://github.com/itzandroidtab/cortex-trace.git"
   },
   "categories": [
-    "Other"
+    "Debuggers"
   ],
   "activationEvents": [
-    "onCommand:debug-tracker-client.start",
     "onDebug"
   ],
+  "icon": "images/icon.png",
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "category": "Debug Tracker Client",
-        "command": "debug-tracker-client.start",
-        "title": "Start Extension"
+        "category": "cortex-trace",
+        "command": "cortex-trace.start",
+        "title": "Hello world"
       }
+    ]
+  },
+  "pkg": {
+    "outputPath": ".dist",
+    "targets": [
+      "node16-win-x64"
+    ],
+    "assets": [
+      "utils/*",
+      "public/*",
+      "public/**/*"
     ]
   },
   "scripts": {
@@ -51,13 +70,16 @@
     "mocha": "^10.0.0",
     "ts-loader": "^9.3.1",
     "typescript": "^4.7.4",
-    "webpack": "^5.74.0",
+    "webpack": "^5.89.0",
     "webpack-cli": "^4.10.0"
   },
   "extensionDependencies": [
     "mcu-debug.debug-tracker-vscode"
   ],
   "dependencies": {
-    "debug-tracker-vscode": "^0.0.11"
+    "@vercel/webpack-asset-relocator-loader": "^1.7.3",
+    "bindings": "^1.5.0",
+    "debug-tracker-vscode": "^0.0.11",
+    "trace_debug": ""
   }
 }
