@@ -26,6 +26,11 @@ function onActiveFileChange(document: vscode.TextDocument | undefined) {
     currentTrace.showTraceCounts();
 }
 
+function updateDecorators() {
+    // update the trace counts
+    currentTrace.showTraceCounts();
+}
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -117,23 +122,32 @@ async function debugTrackerEventHandler(event: IDebuggerTrackerEvent) {
         }
     }
     else if (event.event === DebugSessionStatus.Stopped) {
+        // if we have a periodic update make sure to stop it
+        if (periodicUpdates) {
+            // turn off the periodic updates
+            clearInterval(timeoutId);
+
+            periodicUpdates = false;
+        }
+
         currentTrace.stop();
 
         // update the trace
         if (currentTrace.update()) {
-            if (!periodicUpdates) {
-                // update the trace counts on the screen every 250ms
-                timeoutId = setInterval(currentTrace.showTraceCounts, 250);
-
-                periodicUpdates = true;
-            }
-
             // update the trace counts on the screen
             currentTrace.showTraceCounts();
         }
     }
     else if (event.event === DebugSessionStatus.Running) {
         currentTrace.start();
+
+        // start the periodic update
+        if (!periodicUpdates) {
+            // update the trace counts on the screen every 250ms
+            timeoutId = setInterval(updateDecorators, 250);
+
+            periodicUpdates = true;
+        }
     }
     else if (event.event === DebugSessionStatus.Terminated) {
         // terminate the current trace
