@@ -29,6 +29,8 @@ export class Jtrace extends trace.Trace {
     private readonly interfaceId: number;
     private readonly speed: number;
     private readonly executable: string;
+    private readonly traceSourceId: number;
+    private loadedAsm: Boolean;
  
     private readonly assemblyLineInfo: Array<TraceLineInfo>;
     private readonly memoryMap: Array<MemoryMap>;
@@ -59,7 +61,28 @@ export class Jtrace extends trace.Trace {
         }
     }
 
-    constructor(executable: string, device: string, interfaceId: string, speed: number) {
+    /**
+     * Convert a trace source id string to a trace source id for the jlink dll
+     * @param id 
+     * @returns 
+     */
+    private traceSourceToId(id: string): number {
+        // get the lower case id and convert to a interface id
+        switch (id.toLowerCase()) {
+            default:
+                // return ETB by default
+            case 'etb':
+                return 0;
+            case 'etm':
+                return 1;
+            case 'mtb':
+                return 2;
+            case 'swo':
+                return 3;
+        }
+    }
+
+    constructor(executable: string, device: string, interfaceId: string, traceSourceId: string, speed: number) {
         super();
 
         // clear the initialized flag
@@ -70,6 +93,8 @@ export class Jtrace extends trace.Trace {
         this.speed = speed;
         this.interfaceId = this.interfaceStrToId(interfaceId);
         this.executable = executable;
+        this.traceSourceId = this.traceSourceToId(traceSourceId);
+        this.loadedAsm = false;
 
         // get the memory map and select the device
         this.memoryMap = jtraceDll.setAndGetMemoryMap(device);
@@ -96,67 +121,72 @@ export class Jtrace extends trace.Trace {
 
     public override update() {
         // check if we are already connected
-        if (!this.isConnected) {
-            if (vscode.debug.activeDebugSession !== undefined) {
-                let address = this.memoryMap[0].address;
+        if (this.isConnected) {
+            return true;
+        }
 
-                // do a request for all the function symbols
-                vscode.debug.activeDebugSession.customRequest('load-function-symbols').then((data) => {
-                    if (data === undefined || data.functionSymbols === undefined) {
+        // request all the info we need for the trace
+        if (vscode.debug.activeDebugSession !== undefined && !this.loadedAsm) {
+            let address = this.memoryMap[0].address;
+
+            // do a request for all the function symbols
+            vscode.debug.activeDebugSession.customRequest('load-function-symbols').then((data) => {
+                if (data === undefined || data.functionSymbols === undefined) {
+                    return;
+                }
+
+                // get all the instructions for every function
+                for (const func of data.functionSymbols) {
+                    // make sure we have a valid debug session
+                    if (vscode.debug.activeDebugSession === undefined) {
                         return;
                     }
 
-                    // get all the instructions for every function
-                    for (const func of data.functionSymbols) {
-                        // make sure we have a valid debug session
-                        if (vscode.debug.activeDebugSession === undefined) {
-                            return;
+                    // do a disassemble request
+                    vscode.debug.activeDebugSession.customRequest('disassemble', {function: func.name, file: func.file}).then((asm) => {
+                        // add every instruction to the assembly info
+                        for (const a of asm.instructions) {
+                            this.assemblyLineInfo[a.address / 2] = new TraceLineInfo(func.file, a.line);
                         }
+                    }, (error) => {
+                        console.log("Cortex Trace: Could not disassemble: " + error);
+                    });
+                }
 
-                        // do a disassemble request
-                        vscode.debug.activeDebugSession.customRequest('disassemble', {function: func.name, file: func.file}).then((asm) => {
-                            // add every instruction to the assembly info
-                            for (const a of asm.instructions) {
-                                this.assemblyLineInfo[a.address / 2] = new TraceLineInfo(func.file, a.line);
-                            }
-                        }, (error) => {
-                            console.log("Cortex Trace: Could not disassemble: " + error);
-                        });
-                    }
-                });
-            }
-
-            // init the and connect with the jlink
-            if (!jtraceDll.init()) {
-                // something went wrong. Do not start
-                return false;
-            }
-
-            // connect with the target
-            // TODO: add multiple section support + portwidth support
-            if (!jtraceDll.connect(this.interfaceId, this.speed, 0x1, 4)) {
-                return false;
-            }
-
-            // start the trace
-            jtraceDll.start();
-
-            this.isConnected = true;
+                // mark we have done the load request
+                this.loadedAsm = true;
+            });
         }
 
+        // init the and connect with the jlink
+        if (!jtraceDll.init()) {
+            // something went wrong. Do not start
+            return false;
+        }
+
+        // connect with the target
+        // TODO: add multiple section support + portwidth support
+        if (!jtraceDll.connect(this.interfaceId, this.speed, 0x1, 4, this.traceSourceId)) {
+            return false;
+        }
+
+        // start the trace
+        jtraceDll.start();
+
+        this.isConnected = true;
+
+        // return we are connected and ready
         return true;
     }
 
     public override start() {
-        if (this.isConnected) {
-            // start the trace
-            jtraceDll.start();
-        }
+        // no need to do anything. We only need to start 
+        // the trace once
     }
 
     public override stop() {
-        // do nothing. The trace automaticly gets stopped when the
-        // target halts
+        // do nothing. The trace automaticly gets stopped 
+        // when the target halts
     }
 
     public override terminateTrace() {

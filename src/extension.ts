@@ -108,9 +108,10 @@ async function debugTrackerEventHandler(event: IDebuggerTrackerEvent) {
             switch (config.servertype) {
                 case 'jlink':
                     // change to the jtrace
-                    // todo: add support for custom speeds
+                    // todo: add support for custom speeds and trace types
                     currentTrace = new jtrace.Jtrace(
-                        config.executable, config.device, config.interface, 20000
+                        config.executable, config.device, 
+                        config.interface, 'ETM', 20000
                     );
                     break;
 
