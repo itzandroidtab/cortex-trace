@@ -159,7 +159,7 @@ export class Jtrace extends trace.Trace {
         // target halts
     }
 
-    public override terminate() {
+    public override terminateTrace() {
         if (this.isConnected) {
             // stop the trace
             jtraceDll.stop();

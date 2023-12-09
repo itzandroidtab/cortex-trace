@@ -58,7 +58,19 @@ export abstract class Trace {
     /**
      * Terminate the trace. Called to close anything left open
      */
-    public abstract terminate(): void;
+    public terminate() {
+        // clear all decorators
+        for (const [index, editor] of vscode.window.visibleTextEditors.entries()) {
+            const decorators = new Array<vscode.DecorationOptions>(0);
+            
+            editor.setDecorations(this.decorationType, decorators);
+        }
+
+        // terminate the trace
+        this.terminateTrace();
+    }
+
+    protected abstract terminateTrace(): void;
 
     /**
      * Get the instruction counts the trace. (if not supported 
@@ -190,7 +202,7 @@ export class DefaultTrace extends Trace {
     /**
      * Terminate the trace. Called to close anything left open
      */
-    public terminate() {
+    public terminateTrace() {
         return;
     }
 
